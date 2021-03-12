@@ -366,7 +366,6 @@ pub mod dalek_sig_serde {
 	use ed25519_dalek::Signature as DalekSignature;
 	use serde::de::Error;
 	use serde::{Deserialize, Deserializer, Serializer};
-	use std::convert::TryFrom;
 
 	use crate::grin_util::{from_hex, ToHex};
 
@@ -388,7 +387,7 @@ pub mod dalek_sig_serde {
 			.and_then(|bytes: Vec<u8>| {
 				let mut b = [0u8; 64];
 				b.copy_from_slice(&bytes[0..64]);
-				DalekSignature::try_from(b).map_err(|err| Error::custom(err.to_string()))
+				DalekSignature::from_bytes(&b).map_err(|err| Error::custom(err.to_string()))
 			})
 	}
 }
@@ -398,7 +397,6 @@ pub mod option_dalek_sig_serde {
 	use ed25519_dalek::Signature as DalekSignature;
 	use serde::de::Error;
 	use serde::{Deserialize, Deserializer, Serializer};
-	use std::convert::TryFrom;
 
 	use crate::grin_util::{from_hex, ToHex};
 
@@ -424,7 +422,7 @@ pub mod option_dalek_sig_serde {
 				.and_then(|bytes: Vec<u8>| {
 					let mut b = [0u8; 64];
 					b.copy_from_slice(&bytes[0..64]);
-					DalekSignature::try_from(b)
+					DalekSignature::from_bytes(&b)
 						.map(Some)
 						.map_err(|err| Error::custom(err.to_string()))
 				}),
@@ -439,7 +437,6 @@ pub mod option_dalek_sig_base64 {
 	use ed25519_dalek::Signature as DalekSignature;
 	use serde::de::Error;
 	use serde::{Deserialize, Deserializer, Serializer};
-	use std::convert::TryFrom;
 
 	///
 	pub fn serialize<S>(sig: &Option<DalekSignature>, serializer: S) -> Result<S::Ok, S::Error>
@@ -463,7 +460,7 @@ pub mod option_dalek_sig_base64 {
 				.and_then(|bytes: Vec<u8>| {
 					let mut b = [0u8; 64];
 					b.copy_from_slice(&bytes[0..64]);
-					DalekSignature::try_from(b)
+					DalekSignature::from_bytes(&b)
 						.map(Some)
 						.map_err(|err| Error::custom(err.to_string()))
 				}),
@@ -601,7 +598,6 @@ mod test {
 	use ed25519_dalek::PublicKey as DalekPublicKey;
 	use ed25519_dalek::SecretKey as DalekSecretKey;
 	use ed25519_dalek::Signature as DalekSignature;
-	use ed25519_dalek::Signer;
 	use serde::Deserialize;
 
 	use serde_json;

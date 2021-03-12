@@ -34,7 +34,6 @@ use ed25519_dalek::Keypair as DalekKeypair;
 use ed25519_dalek::PublicKey as DalekPublicKey;
 use ed25519_dalek::SecretKey as DalekSecretKey;
 use ed25519_dalek::Signature as DalekSignature;
-use ed25519_dalek::{Signer, Verifier};
 
 use crate::types::TokenTxLogEntryType;
 // static for incrementing test UUIDs
@@ -224,6 +223,7 @@ where
 			num_change_outputs,
 			selection_strategy_is_use_all,
 			parent_key_id.clone(),
+			!is_initiator,
 			use_test_rng,
 		)?,
 		false => selection::build_send_tx(
@@ -237,6 +237,7 @@ where
 			num_change_outputs,
 			selection_strategy_is_use_all,
 			parent_key_id.clone(),
+			!is_initiator,
 			use_test_rng,
 		)?,
 	};
@@ -290,6 +291,7 @@ where
 		slate,
 		current_height,
 		parent_key_id.clone(),
+		is_initiator,
 		use_test_rng,
 	)?;
 
@@ -825,23 +827,21 @@ mod test {
 
 		let tx1 = build::transaction(
 			KernelFeatures::Plain { fee: 0 },
-			None,
-			&[build::output(105, key_id1.clone())],
+			vec![build::output(105, key_id1.clone())],
 			&keychain,
 			&builder,
 		)
 		.unwrap();
 		let tx2 = build::transaction(
 			KernelFeatures::Plain { fee: 0 },
-			None,
-			&[build::input(105, key_id1.clone())],
+			vec![build::input(105, key_id1.clone())],
 			&keychain,
 			&builder,
 		)
 		.unwrap();
 
-		let inputs: Vec<_> = tx2.inputs().into();
-		assert_eq!(tx1.outputs()[0].commitment(), inputs[0].commitment());
+		assert_eq!(tx1.outputs()[0].features, tx2.inputs()[0].features);
+		assert_eq!(tx1.outputs()[0].commitment(), tx2.inputs()[0].commitment());
 	}
 
 	#[test]
@@ -876,7 +876,7 @@ mod test {
 		};
 
 		let amount = 1_234_567_890_u64;
-		let msg = payment_proof_message(None, amount, &kernel_excess, address).unwrap();
+		let msg = payment_proof_message(amount, &kernel_excess, address).unwrap();
 		println!("payment proof message is (len {}): {:?}", msg.len(), msg);
 
 		let decoded = _decode_payment_proof_message(&msg).unwrap();
@@ -884,8 +884,7 @@ mod test {
 		assert_eq!(decoded.1, kernel_excess);
 		assert_eq!(decoded.2, address);
 
-		let sig =
-			create_payment_proof_signature(None, amount, &kernel_excess, address, sec_key).unwrap();
+		let sig = create_payment_proof_signature(amount, &kernel_excess, address, sec_key).unwrap();
 
 		assert!(address.verify(&msg, &sig).is_ok());
 	}

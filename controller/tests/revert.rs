@@ -116,7 +116,7 @@ fn revert(
 		Ok(())
 	})?;
 
-	let reward = core::consensus::REWARD_ADJUSTED;
+	let reward = core::consensus::REWARD;
 	let cm = global::coinbase_maturity() as u64;
 	let sent = reward * 2;
 
@@ -129,8 +129,8 @@ fn revert(
 		let (refreshed, info) = api.retrieve_summary_info(m, true, 1)?;
 		assert!(refreshed);
 		assert_eq!(info.last_confirmed_height, bh);
-		assert_eq!(info.total, 42 * reward);
-		assert_eq!(info.amount_currently_spendable, 35 * reward);
+		assert_eq!(info.total, bh * reward);
+		assert_eq!(info.amount_currently_spendable, (bh - cm) * reward);
 		assert_eq!(info.amount_reverted, 0);
 		// check tx log as well
 		let (_, txs) = api.retrieve_txs(m, true, None, None)?;
@@ -173,11 +173,11 @@ fn revert(
 		api.tx_lock_outputs(m, &slate)?;
 		let slate = client1.send_tx_slate_direct("wallet2", &slate)?;
 		let slate = api.finalize_tx(m, &slate)?;
-		tx = slate.tx;
+		tx = Some(slate.tx);
 
 		Ok(())
 	})?;
-	let tx = tx.expect("tx from slate");
+	let tx = tx.unwrap();
 
 	// Check funds have been received
 	owner(Some(wallet2.clone()), mask2, None, |api, m| {
@@ -207,17 +207,22 @@ fn revert(
 
 	// Build 2 blocks at same height: 1 with the tx, 1 without
 	let head = chain.head_header().unwrap();
-	let block_with =
-		create_block_for_wallet(&chain, head.clone(), &[tx.clone()], wallet1.clone(), mask1)?;
-	let block_without = create_block_for_wallet(&chain, head, &[], wallet1.clone(), mask1)?;
+	let block_with = create_block_for_wallet(
+		&chain,
+		head.clone(),
+		vec![&tx.as_ref().unwrap()],
+		wallet1.clone(),
+		mask1,
+	)?;
+	let block_without = create_block_for_wallet(&chain, head, vec![], wallet1.clone(), mask1)?;
 
 	// Add block with tx to the chain
 	process_block(&chain, block_with.clone());
-	//assert_eq!(chain.head_header().unwrap(), block_with.header);
+	assert_eq!(chain.head_header().unwrap(), block_with.header);
 
 	// Add block without tx to the parallel chain
 	process_block(&chain2, block_without.clone());
-	//assert_eq!(chain2.head_header().unwrap(), block_without.header);
+	assert_eq!(chain2.head_header().unwrap(), block_without.header);
 
 	let bh = bh + 1;
 
@@ -241,7 +246,7 @@ fn revert(
 	})?;
 
 	// Attach more blocks to the parallel chain, making it the longest one
-	award_block_to_wallet(&chain2, &[], wallet1.clone(), mask1)?;
+	award_block_to_wallet(&chain2, vec![], wallet1.clone(), mask1)?;
 	assert_eq!(chain2.head_header().unwrap().height, bh + 1);
 	let new_head = chain2
 		.get_block(&chain2.head_header().unwrap().hash())
@@ -250,9 +255,9 @@ fn revert(
 	// Input blocks from parallel chain to original chain, updating it as well
 	// and effectively reverting the transaction
 	process_block(&chain, block_without.clone()); // This shouldn't update the head
-											  //assert_eq!(chain.head_header().unwrap(), block_with.header);
+	assert_eq!(chain.head_header().unwrap(), block_with.header);
 	process_block(&chain, new_head.clone()); // But this should!
-										 //assert_eq!(chain.head_header().unwrap(), new_head.header);
+	assert_eq!(chain.head_header().unwrap(), new_head.header);
 
 	let bh = bh + 1;
 
@@ -277,7 +282,15 @@ fn revert(
 
 	stopper2.store(false, Ordering::Relaxed);
 	Ok((
-		chain, stopper, sent, bh, tx, wallet1, mask1_i, wallet2, mask2_i,
+		chain,
+		stopper,
+		sent,
+		bh,
+		tx.unwrap(),
+		wallet1,
+		mask1_i,
+		wallet2,
+		mask2_i,
 	))
 }
 
@@ -287,7 +300,7 @@ fn revert_reconfirm_impl(test_dir: &'static str) -> Result<(), libwallet::Error>
 	let mask2 = mask2_i.as_ref();
 
 	// Include the tx into the chain again, the tx should no longer be reverted
-	award_block_to_wallet(&chain, &[tx], wallet1.clone(), mask1)?;
+	award_block_to_wallet(&chain, vec![&tx], wallet1.clone(), mask1)?;
 
 	let bh = bh + 1;
 

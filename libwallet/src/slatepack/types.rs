@@ -226,7 +226,7 @@ impl Slatepack {
 	}
 
 	/// retrieve recipients
-	pub fn recipients(&self) -> &[SlatepackAddress] {
+	pub fn recipients(&self) -> &Vec<SlatepackAddress> {
 		&self.encrypted_meta.recipients
 	}
 
@@ -453,7 +453,7 @@ pub struct SlatepackEncMetadata {
 	recipients: Vec<SlatepackAddress>,
 }
 
-fn recipients_empty(value: &[SlatepackAddress]) -> bool {
+fn recipients_empty(value: &Vec<SlatepackAddress>) -> bool {
 	value.is_empty()
 }
 
@@ -706,7 +706,7 @@ fn slatepack_bin_future() -> Result<(), grin_wallet_util::byte_ser::Error> {
 	let mut rdr = Cursor::new(opt_fields_len_bytes.to_vec());
 	let opt_fields_len = rdr.read_u32::<BigEndian>().unwrap();
 	// check this matches what we expect below
-	assert_eq!(opt_fields_len, 66); //65 for grin, 66 for vcash
+	assert_eq!(opt_fields_len, 65);
 
 	let end_head_pos = opt_fields_len as usize + 8 + 1;
 

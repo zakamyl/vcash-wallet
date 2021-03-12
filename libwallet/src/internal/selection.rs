@@ -48,6 +48,7 @@ pub fn build_send_tx<'a, T: ?Sized, C, K>(
 	change_outputs: usize,
 	selection_strategy_is_use_all: bool,
 	parent_key_id: Identifier,
+	is_invoice: bool,
 	use_test_nonce: bool,
 ) -> Result<Context, Error>
 where
@@ -55,6 +56,10 @@ where
 	C: NodeClient + 'a,
 	K: Keychain + 'a,
 {
+	//TODO: Revise HF3. If we're sending V4 slates, only include
+	// change outputs in excess sum
+	let include_inputs_in_sum = !slate.is_compact();
+
 	let (elems, inputs, change_amounts_derivations, fee) = select_send_tx(
 		wallet,
 		keychain_mask,
@@ -67,7 +72,7 @@ where
 		&parent_key_id,
 		0,
 		0,
-		false,
+		include_inputs_in_sum,
 	)?;
 
 	// Update the fee on the slate so we account for this when building the tx.
@@ -83,6 +88,7 @@ where
 		ZERO_KEY,
 		&parent_key_id,
 		use_test_nonce,
+		is_invoice,
 	);
 
 	context.fee = fee;
@@ -118,6 +124,7 @@ pub fn build_send_token_tx<'a, T: ?Sized, C, K>(
 	change_outputs: usize,
 	selection_strategy_is_use_all: bool,
 	parent_key_id: Identifier,
+	is_invoice: bool,
 	use_test_nonce: bool,
 ) -> Result<Context, Error>
 where
@@ -130,6 +137,10 @@ where
 			"token type should not be none".to_owned(),
 		))?;
 	}
+
+	//TODO: Revise HF3. If we're sending V4 slates, only include
+	// change outputs in excess sum
+	let include_inputs_in_sum = !slate.is_compact();
 
 	let (mut token_elems, token_inputs, token_change_amounts_derivations) = select_send_token_tx(
 		wallet,
@@ -160,7 +171,7 @@ where
 		&parent_key_id,
 		token_inout_len,
 		token_output_len,
-		false,
+		include_inputs_in_sum,
 	)?;
 
 	let mut all_elems = vec![];
@@ -178,6 +189,7 @@ where
 		token_blinding.secret_key(&keychain.secp()).unwrap(),
 		&parent_key_id,
 		use_test_nonce,
+		is_invoice,
 	);
 
 	context.fee = fee;
@@ -473,6 +485,7 @@ pub fn build_recipient_output<'a, T: ?Sized, C, K>(
 	slate: &mut Slate,
 	current_height: u64,
 	parent_key_id: Identifier,
+	is_invoice: bool,
 	use_test_rng: bool,
 ) -> Result<
 	(
@@ -520,6 +533,7 @@ where
 			.unwrap(),
 		&parent_key_id,
 		use_test_rng,
+		is_invoice,
 	);
 
 	if slate.token_type.clone().is_some() {
@@ -763,6 +777,7 @@ where
 	// TODO - Is it safe to spend without a change output? (1 input -> 1 output)
 	// TODO - Does this not potentially reveal the senders private key?
 	//
+
 	// First attempt to spend without change
 	let output_len = if amount == 0 { 0 } else { 1 };
 
@@ -1223,6 +1238,7 @@ where
 		token_blinding.secret_key(&keychain.secp()).unwrap(),
 		&parent_key_id,
 		use_test_nonce,
+		false,
 	);
 
 	context.fee = fee;

@@ -230,7 +230,7 @@ pub fn txs(
 	account: &str,
 	cur_height: u64,
 	validated: bool,
-	txs: &[TxLogEntry],
+	txs: &Vec<TxLogEntry>,
 	include_status: bool,
 	dark_background_color_scheme: bool,
 ) -> Result<(), Error> {

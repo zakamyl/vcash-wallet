@@ -17,7 +17,7 @@ use crate::api;
 use crate::chain;
 use crate::chain::Chain;
 use crate::core;
-use crate::core::core::{Output, OutputFeatures, Transaction, TxKernel};
+use crate::core::core::{Output, OutputFeatures, OutputIdentifier, Transaction, TxKernel};
 use crate::core::core::{TokenKey, TokenOutputIdentifier};
 use crate::core::{consensus, global, pow};
 use crate::keychain;
@@ -39,14 +39,20 @@ mod testclient;
 pub use self::{testclient::LocalWalletClient, testclient::WalletProxy};
 
 /// Get an output from the chain locally and present it back as an API output
-fn get_output_local(chain: &chain::Chain, commit: pedersen::Commitment) -> Option<api::Output> {
-	if chain.get_unspent(commit).unwrap().is_some() {
-		let block_height = chain.get_header_for_output(commit).unwrap().height;
-		let output_pos = chain.get_output_pos(&commit).unwrap_or(0);
-		Some(api::Output::new(&commit, block_height, output_pos))
-	} else {
-		None
+fn get_output_local(chain: &chain::Chain, commit: &pedersen::Commitment) -> Option<api::Output> {
+	let outputs = [
+		OutputIdentifier::new(OutputFeatures::Plain, commit),
+		OutputIdentifier::new(OutputFeatures::Coinbase, commit),
+	];
+
+	for x in outputs.iter() {
+		if chain.get_unspent(&x).unwrap().is_some() {
+			let block_height = chain.get_header_for_output(&x).unwrap().height;
+			let output_pos = chain.get_output_pos(&x.commit).unwrap_or(0);
+			return Some(api::Output::new(&commit, block_height, output_pos));
+		}
 	}
+	None
 }
 
 /// Get an output from the chain locally and present it back as an API output
@@ -125,7 +131,9 @@ fn get_outputs_by_pmmr_index_local(
 		outputs: outputs
 			.2
 			.iter()
-			.map(|x| api::OutputPrintable::from_output(x, &chain, None, true, false).unwrap())
+			.map(|x| {
+				api::OutputPrintable::from_output(x, chain.clone(), None, true, false).unwrap()
+			})
 			.collect(),
 	}
 }
@@ -146,7 +154,10 @@ fn get_token_outputs_by_pmmr_index_local(
 		outputs: outputs
 			.2
 			.iter()
-			.map(|x| api::OutputPrintable::from_token_output(x, &chain, None, true, false).unwrap())
+			.map(|x| {
+				api::OutputPrintable::from_token_output(x, chain.clone(), None, true, false)
+					.unwrap()
+			})
 			.collect(),
 	}
 }
@@ -186,14 +197,14 @@ fn height_range_to_token_pmmr_indices_local(
 fn create_block_with_reward(
 	chain: &Chain,
 	prev: core::core::BlockHeader,
-	txs: &[Transaction],
+	txs: Vec<&Transaction>,
 	reward_output: Output,
 	reward_kernel: TxKernel,
 ) -> core::core::Block {
 	let next_header_info = consensus::next_difficulty(1, chain.difficulty_iter().unwrap());
 	let mut b = core::core::Block::new(
 		&prev,
-		txs,
+		txs.into_iter().cloned().collect(),
 		next_header_info.clone().difficulty,
 		(reward_output, reward_kernel),
 	)
@@ -214,13 +225,13 @@ fn create_block_with_reward(
 /// Adds a block with a given reward to the chain and mines it
 pub fn add_block_with_reward(
 	chain: &Chain,
-	txs: &[Transaction],
+	txs: Vec<&Transaction>,
 	reward_output: Output,
 	reward_kernel: TxKernel,
 ) {
 	let prev = chain.head_header().unwrap();
-	let block = create_block_with_reward(chain, prev, txs, reward_output, reward_kernel);
-	process_block(chain, block);
+	let mut block = create_block_with_reward(chain, prev, txs, reward_output, reward_kernel);
+	process_block(chain, &mut block);
 }
 
 /// adds a reward output to a wallet, includes that reward in a block
@@ -228,7 +239,7 @@ pub fn add_block_with_reward(
 pub fn create_block_for_wallet<'a, L, C, K>(
 	chain: &Chain,
 	prev: core::core::BlockHeader,
-	txs: &[Transaction],
+	txs: Vec<&Transaction>,
 	wallet: Arc<Mutex<Box<dyn WalletInst<'a, L, C, K> + 'a>>>,
 	keychain_mask: Option<&SecretKey>,
 ) -> Result<core::core::Block, libwallet::Error>
@@ -259,7 +270,7 @@ where
 /// Helpful for building up precise wallet balances for testing.
 pub fn award_block_to_wallet<'a, L, C, K>(
 	chain: &Chain,
-	txs: &[Transaction],
+	txs: Vec<&Transaction>,
 	wallet: Arc<Mutex<Box<dyn WalletInst<'a, L, C, K> + 'a>>>,
 	keychain_mask: Option<&SecretKey>,
 ) -> Result<(), libwallet::Error>
@@ -269,15 +280,16 @@ where
 	K: keychain::Keychain + 'a,
 {
 	let prev = chain.head_header().unwrap();
-	let block = create_block_for_wallet(chain, prev, txs, wallet, keychain_mask)?;
-	process_block(chain, block);
+	let mut block = create_block_for_wallet(chain, prev, txs, wallet, keychain_mask)?;
+	process_block(chain, &mut block);
 	Ok(())
 }
 
-pub fn process_block(chain: &Chain, block: core::core::Block) {
-	let mut block = block.clone();
-	get_block_bit_diff(&mut block);
-	chain.process_block(block, chain::Options::MINE).unwrap();
+pub fn process_block(chain: &Chain, block: &mut core::core::Block) {
+	get_block_bit_diff(block);
+	chain
+		.process_block(block.clone(), chain::Options::MINE)
+		.unwrap();
 	chain.validate(false).unwrap();
 }
 
@@ -295,7 +307,7 @@ where
 	K: keychain::Keychain + 'a,
 {
 	for _ in 0..number {
-		award_block_to_wallet(chain, &[], wallet.clone(), keychain_mask)?;
+		award_block_to_wallet(chain, vec![], wallet.clone(), keychain_mask)?;
 		if pause_between {
 			thread::sleep(std::time::Duration::from_millis(100));
 		}
